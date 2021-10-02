@@ -1,6 +1,12 @@
 # Angular-RxJS
 Find the associated Pluralsight course here: https://app.pluralsight.com/library/courses/rxjs-angular-reactive-development
 
+# RxJS Tutorials
+
+ - map operators: https://www.youtube.com/watch?v=lM16-E-uCWc
+
+ - promises vs observables: https://www.youtube.com/watch?v=GSI7iyK_ju4&ab_channel=NeverBenBetter
+
 `APM-Start`: The starter files for the course. **Use this to code along with the course**.
 
 `APM-Final`: The completed files. Use this to see the completed solution from the course.
