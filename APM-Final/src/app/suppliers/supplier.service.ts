@@ -7,42 +7,40 @@ import { map, tap, concatMap, mergeMap, switchMap, shareReplay, catchError } fro
 import { Supplier } from './supplier';
 
 @Injectable({
-  providedIn: 'root'
+  providedIn: 'root',
 })
 export class SupplierService {
+  // rxjs operators demo
+  // https://stackblitz.com/edit/rxjs-map-operators
+  
   suppliersUrl = 'api/suppliers';
 
   // All Suppliers
-  suppliers$ = this.http.get<Supplier[]>(this.suppliersUrl)
-    .pipe(
-      tap(data => console.log('suppliers', JSON.stringify(data))),
-      shareReplay(1),
-      catchError(this.handleError)
-    );
+  suppliers$ = this.http.get<Supplier[]>(this.suppliersUrl).pipe(
+    tap((data) => console.log('suppliers', JSON.stringify(data))),
+    // emit last emitted value
+    shareReplay(1),
+    catchError(this.handleError)
+  );
 
-  suppliersWithMap$ = of(1, 5, 8)
-    .pipe(
-      map(id => this.http.get<Supplier>(`${this.suppliersUrl}/${id}`)
-      )
-    );
+  suppliersWithMap$ = of(1, 5, 8).pipe(
+    map((id) => this.http.get<Supplier>(`${this.suppliersUrl}/${id}`))
+  );
 
-  suppliersWithConcatMap$ = of(1, 5, 8)
-    .pipe(
-      tap(id => console.log('concatMap source Observable', id)),
-      concatMap(id => this.http.get<Supplier>(`${this.suppliersUrl}/${id}`))
-    );
+  suppliersWithConcatMap$ = of(1, 5, 8).pipe(
+    tap((id) => console.log('concatMap source Observable', id)),
+    concatMap((id) => this.http.get<Supplier>(`${this.suppliersUrl}/${id}`))
+  );
 
-  suppliersWithMergeMap$ = of(1, 5, 8)
-    .pipe(
-      tap(id => console.log('mergeMap source Observable', id)),
-      mergeMap(id => this.http.get<Supplier>(`${this.suppliersUrl}/${id}`))
-    );
+  suppliersWithMergeMap$ = of(1, 5, 8).pipe(
+    tap((id) => console.log('mergeMap source Observable', id)),
+    mergeMap((id) => this.http.get<Supplier>(`${this.suppliersUrl}/${id}`))
+  );
 
-  suppliersWithSwitchMap$ = of(1, 5, 8)
-    .pipe(
-      tap(id => console.log('switchMap source Observable', id)),
-      switchMap(id => this.http.get<Supplier>(`${this.suppliersUrl}/${id}`))
-    );
+  suppliersWithSwitchMap$ = of(1, 5, 8).pipe(
+    tap((id) => console.log('switchMap source Observable', id)),
+    switchMap((id) => this.http.get<Supplier>(`${this.suppliersUrl}/${id}`))
+  );
 
   constructor(private http: HttpClient) {
     // this.suppliersWithMap$
@@ -69,5 +67,4 @@ export class SupplierService {
     console.error(err);
     return throwError(errorMessage);
   }
-
 }
