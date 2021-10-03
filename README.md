@@ -1,8 +1,8 @@
-# APM
+# angular-rxjs-grail
 
 >Forked from https://github.com/DeborahK/Angular-RxJS course repo.
 
-Demo project demonstrating RxJS and Observables patterns within an Angular application. This approach is different to using the `NgRx` package commonly used in Angular projects. Which gives us a store, actions, effects, reducer etc. Instead the following pattern of Observable actions and services to create a _reactive_ application:
+Demo project demonstrating RxJS and Observable patterns within an Angular application. This approach is different to using the `@ngrx` package commonly used in Angular projects. Which gives us a store, actions, effects, reducer etc. Instead the following pattern of Observable actions and services is used to create a _reactive_ application without a _Store_:
 
 > Actions: Creating an action stream using a `BehaviorSubject` and calling `.next` is similar to dispatching an action in NgRx:
 
