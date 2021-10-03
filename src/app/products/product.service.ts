@@ -393,13 +393,14 @@ export class ProductService {
     }
     if (product.status === StatusCode.Deleted) {
       const url = `${this.productsUrl}/${product.id}`;
-      return this.http.delete<Product>(url, { headers: this.headers })
-        .pipe(
-          tap(data => console.log('Deleted product', product)),
-          // Return the original product so it can be removed from the array
-          map(() => product),
-          catchError(this.handleError)
-        );
+      return this.http.delete<Product>(url, { headers: this.headers }).pipe(
+        tap(() => this.isLoadingSubject.next(true)),
+        tap((data) => console.log("Deleted product", product)),
+        // Return the original product so it can be removed from the array
+        map(() => product),
+        tap(() => this.isLoadingSubject.next(true)),
+        catchError(this.handleError)
+      );
     }
     if (product.status === StatusCode.Updated) {
       const url = `${this.productsUrl}/${product.id}`;

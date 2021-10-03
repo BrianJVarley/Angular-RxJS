@@ -17,7 +17,7 @@ Demo project demonstrating RxJS and Observable patterns within an Angular applic
 
 ```
 
-> Selecting data: Instead of using NgRx selectors, state is queried directly from the service and subscribed to in the component with `combineLatest`. 
+> Selecting data: Instead of using NgRx selectors or effects, state is queried directly from the service and subscribed to in the component with `combineLatest`. 
 
 
 ```JavaScript
