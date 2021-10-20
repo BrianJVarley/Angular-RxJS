@@ -66,6 +66,44 @@ are combined to provide the component with an Observable to subscribe to.
 ```
 
 
+# Hot vs Cold Observables
+
+Hot observables can produce events in the absence of observers, whereas cold observables don’t become active until they have a subscription. A result of this is that hot streams will often have much longer lifespans than their cold counterparts. Whereas a cold stream will shut down when the subscriber shuts down, a hot one can continue running after the end of a subscription.
+
+# Subjects
+
+> An RxJS Subject is a special type of Observable that allows values to be multicasted to many Observers.
+
+Subject: 
+> A Subject is like an Observable, but can multicast to many Observers. Subjects are like EventEmitters: they maintain a registry of many listeners.
+
+A Subject sends data to subscribed observers. _Any previously_ emitted data is not sent to new observers.
+
+
+BehaviorSubject:
+> BehaviorSubject stores the latest value emitted to its consumers, and whenever a new Observer subscribes, it will immediately receive the “current value”.
+
+```
+const subject = new BehaviorSubject(0); // 0 is the initial value
+
+```
+
+
+ReplaySubject:
+> A ReplaySubject is similar to a BehaviorSubject in that it can send old values to new subscribers, but it can also record a part of the Observable execution.
+
+```
+const subject = new ReplaySubject(2); // buffer 2 values for new subscribers
+
+```
+
+AsyncSubject:
+> A AsyncSubject will emit the last value to observers when the sequence is completed.
+
+```
+const subject = new AsyncSubject();
+
+```
 
 
 # Stackblitz

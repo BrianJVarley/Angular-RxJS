@@ -1,10 +1,10 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 
-import { BehaviorSubject, combineLatest, EMPTY, from, merge, Subject, throwError, of, forkJoin, Observable } from 'rxjs';
+import { BehaviorSubject, combineLatest, EMPTY, from, merge, Subject, throwError, of, forkJoin, Observable, AsyncSubject, ReplaySubject } from 'rxjs';
 import {
   catchError, filter, map, mergeMap, scan, shareReplay, tap, toArray, switchMap,
-  mergeAll, max, reduce, concatMap, delay
+  mergeAll, max, reduce, concatMap, delay, share, retry
 } from 'rxjs/operators';
 
 import { Product, ProductClass, ProductWithSupplier, StatusCode } from './product';
@@ -14,45 +14,47 @@ import { Supplier, SupplierClass } from '../suppliers/supplier';
 import { SupplierService } from '../suppliers/supplier.service';
 
 @Injectable({
-  providedIn: 'root'
+  providedIn: "root",
 })
 export class ProductService {
-  private productsUrl = 'api/products';
+  private productsUrl = "api/products";
   private suppliersUrl = this.supplierService.suppliersUrl;
 
   // All products
-  products$ = this.http.get<Product[]>(this.productsUrl)
-    .pipe(
-      tap(data => console.log('Products', JSON.stringify(data))),
-      catchError(this.handleError)
-    );
+  products$ = this.http.get<Product[]>(this.productsUrl).pipe(
+    tap((data) => console.log("Products", JSON.stringify(data))),
+    catchError(this.handleError)
+  );
 
   // To support a refresh feature
   private refresh = new BehaviorSubject<boolean>(true);
 
-  products2$ = this.refresh
-    .pipe(
-      mergeMap(() => this.http.get<Product[]>(this.productsUrl)
-        .pipe(
-          tap(data => console.log('Products', JSON.stringify(data))),
-          catchError(this.handleError)
-        )
-      ));
+  products2$ = this.refresh.pipe(
+    mergeMap(() =>
+      this.http.get<Product[]>(this.productsUrl).pipe(
+        tap((data) => console.log("Products", JSON.stringify(data))),
+        catchError(this.handleError)
+      )
+    )
+  );
 
   // Combine products with categories
   // Map to the revised shape.
   // Be sure to specify the type to ensure after the map that it knows the correct type
   productsWithCategory$ = combineLatest([
     this.products$,
-    this.productCategoryService.productCategories$
+    this.productCategoryService.productCategories$,
   ]).pipe(
     map(([products, categories]) =>
-      products.map(product => ({
-        ...product,
-        price: product.price * 1.5,
-        category: categories.find(c => product.categoryId === c.id).name,
-        searchKey: [product.productName]
-      }) as Product)
+      products.map(
+        (product) =>
+          ({
+            ...product,
+            price: product.price * 1.5,
+            category: categories.find((c) => product.categoryId === c.id).name,
+            searchKey: [product.productName],
+          } as Product)
+      )
     ),
     shareReplay(1)
   );
@@ -70,7 +72,7 @@ export class ProductService {
           result.concat(
             suppliers
               .filter((s) => product.supplierIds.includes(s.id))
-              .map(supplier => ({
+              .map((supplier) => ({
                 ...product,
                 supplier: supplier.name,
               }))
@@ -110,24 +112,28 @@ export class ProductService {
 
   // Add the newly added product via http post with concatMap
   // And then to the full list of products with scan.
-  headers = new HttpHeaders({ 'Content-Type': 'application/json' });
+  headers = new HttpHeaders({ "Content-Type": "application/json" });
   productsWithAdd$ = merge(
     this.productsWithCategory$,
-    this.productInsertedAction$
-      .pipe(
-        concatMap(newProduct => {
-          newProduct.id = null;
-          return this.http.post<Product>(this.productsUrl, newProduct, { headers: this.headers })
-            .pipe(
-              tap(product => console.log('Created product', JSON.stringify(product))),
-              catchError(this.handleError)
-            );
-        }),
-      ))
-    .pipe(
-      scan((acc: Product[], value: Product) => [...acc, value]),
-      shareReplay(1)
-    );
+    this.productInsertedAction$.pipe(
+      concatMap((newProduct) => {
+        newProduct.id = null;
+        return this.http
+          .post<Product>(this.productsUrl, newProduct, {
+            headers: this.headers,
+          })
+          .pipe(
+            tap((product) =>
+              console.log("Created product", JSON.stringify(product))
+            ),
+            catchError(this.handleError)
+          );
+      })
+    )
+  ).pipe(
+    scan((acc: Product[], value: Product) => [...acc, value]),
+    shareReplay(1)
+  );
 
   // Action stream for product selection
   // Default to 0 for no product
@@ -142,12 +148,12 @@ export class ProductService {
   // Location of the shareReplay matters ... won't share anything *after* the shareReplay
   selectedProduct$ = combineLatest([
     this.productsWithAdd$,
-    this.productSelectedAction$
+    this.productSelectedAction$,
   ]).pipe(
     map(([products, selectedProductId]) =>
-      products.find(product => product.id === selectedProductId)
+      products.find((product) => product.id === selectedProductId)
     ),
-    tap(product => console.log('selectedProduct', product)),
+    tap((product) => console.log("selectedProduct", product)),
     shareReplay(1)
   );
 
@@ -159,14 +165,15 @@ export class ProductService {
   // or the stream will complete.
   selectedProductSuppliers$ = combineLatest([
     this.selectedProduct$,
-    this.supplierService.suppliers$
-      .pipe(
-        catchError(err => of([] as Supplier[]))
-      )
+    this.supplierService.suppliers$.pipe(
+      catchError((err) => of([] as Supplier[]))
+    ),
   ]).pipe(
     map(([selectedProduct, suppliers]) =>
-      suppliers.filter(
-        supplier => selectedProduct ? selectedProduct.supplierIds.includes(supplier.id) : EMPTY
+      suppliers.filter((supplier) =>
+        selectedProduct
+          ? selectedProduct.supplierIds.includes(supplier.id)
+          : EMPTY
       )
     )
   );
@@ -175,18 +182,20 @@ export class ProductService {
   // Only gets the suppliers it needs
   // switchMap here instead of mergeMap so quickly clicking on the items cancels prior requests.
   // Using mergeMap and toArray
-  selectedProductSuppliers2$ = this.selectedProduct$
-    .pipe(
-      filter(selectedProduct => Boolean(selectedProduct)),
-      switchMap(selectedProduct =>
-        from(selectedProduct.supplierIds)
-          .pipe(
-            mergeMap(supplierId => this.http.get<Supplier>(`${this.suppliersUrl}/${supplierId}`)),
-            toArray(),
-            tap(suppliers => console.log('product suppliers', JSON.stringify(suppliers)))
-          )
+  selectedProductSuppliers2$ = this.selectedProduct$.pipe(
+    filter((selectedProduct) => Boolean(selectedProduct)),
+    switchMap((selectedProduct) =>
+      from(selectedProduct.supplierIds).pipe(
+        mergeMap((supplierId) =>
+          this.http.get<Supplier>(`${this.suppliersUrl}/${supplierId}`)
+        ),
+        toArray(),
+        tap((suppliers) =>
+          console.log("product suppliers", JSON.stringify(suppliers))
+        )
       )
-    );
+    )
+  );
 
   /*
     Additional examples, not included in the course
@@ -196,188 +205,240 @@ export class ProductService {
   // Only gets the suppliers it needs
   // switchMap here instead of mergeMap so quickly clicking on the items cancels prior requests.
   // Using forkJoin
-  selectedProductSuppliers3$ = this.selectedProduct$
-    .pipe(
-      filter(selectedProduct => Boolean(selectedProduct)),
-      tap(product => console.log('product', JSON.stringify(product))),
-      switchMap(selectedProduct =>
-        forkJoin(selectedProduct.supplierIds.map(supplierId => this.http.get<Supplier>(`${this.suppliersUrl}/${supplierId}`)))
-      ),
-      tap(suppliers => console.log('product suppliers', JSON.stringify(suppliers))),
-    );
+  selectedProductSuppliers3$ = this.selectedProduct$.pipe(
+    filter((selectedProduct) => Boolean(selectedProduct)),
+    tap((product) => console.log("product", JSON.stringify(product))),
+    switchMap((selectedProduct) =>
+      forkJoin(
+        selectedProduct.supplierIds.map((supplierId) =>
+          this.http.get<Supplier>(`${this.suppliersUrl}/${supplierId}`)
+        )
+      )
+    ),
+    tap((suppliers) =>
+      console.log("product suppliers", JSON.stringify(suppliers))
+    )
+  );
 
   // Action stream for loading
   private isLoadingSubject = new BehaviorSubject<boolean>(false);
   isLoadingAction$ = this.isLoadingSubject.asObservable();
 
   // Suppliers for the selected product with the loading action stream
-  selectedProductSuppliers4$ = this.selectedProduct$
-    .pipe(
-      filter(selectedProduct => Boolean(selectedProduct)),
-      tap(() => this.isLoadingSubject.next(true)),
-      tap(product => console.log('product', JSON.stringify(product))),
-      switchMap(selectedProduct =>
-        forkJoin(selectedProduct.supplierIds.map(supplierId => this.http.get<Supplier>(`${this.suppliersUrl}/${supplierId}`)))
-      ),
-      tap(suppliers => console.log('product suppliers', JSON.stringify(suppliers))),
-      tap(() => this.isLoadingSubject.next(false))
-    );
+  selectedProductSuppliers4$ = this.selectedProduct$.pipe(
+    filter((selectedProduct) => Boolean(selectedProduct)),
+    tap(() => this.isLoadingSubject.next(true)),
+    tap((product) => console.log("product", JSON.stringify(product))),
+    switchMap((selectedProduct) =>
+      forkJoin(
+        selectedProduct.supplierIds.map((supplierId) =>
+          this.http.get<Supplier>(`${this.suppliersUrl}/${supplierId}`)
+        )
+      )
+    ),
+    tap((suppliers) =>
+      console.log("product suppliers", JSON.stringify(suppliers))
+    ),
+    tap(() => this.isLoadingSubject.next(false))
+  );
 
   // Suppliers for all products
   // Gets all products and all suppliers and merges them
   allProductsAndSuppliers$ = combineLatest([
     this.productsWithCategory$,
-    this.supplierService.suppliers$
-      .pipe(
-        catchError(err => of([] as Supplier[]))
-      )
+    this.supplierService.suppliers$.pipe(
+      catchError((err) => of([] as Supplier[]))
+    ),
   ]).pipe(
     map(([products, suppliers]) =>
-      products.map(product => ({
-        ...product,
-        suppliers: product.suppliers = suppliers.filter(
-          supplier => product.supplierIds.includes(supplier.id)
-        )
-      }) as Product)
+      products.map(
+        (product) =>
+          ({
+            ...product,
+            suppliers: (product.suppliers = suppliers.filter((supplier) =>
+              product.supplierIds.includes(supplier.id)
+            )),
+          } as Product)
+      )
     )
   );
 
   // Suppliers for all products
   // Gets all products and then the suppliers for each product
   // (Seems this would be less efficient than allProductsAndSuppliers$)
-  allProductsAndSuppliers2$ = this.productsWithCategory$
-    .pipe(
-      switchMap(products => forkJoin(
-        products.map(product =>
-          forkJoin(product.supplierIds.map(supplierId => this.http.get<Supplier>(`${this.suppliersUrl}/${supplierId}`)))
-            .pipe(
-              map(suppliers => ({
-                ...product,
-                suppliers
-              } as Product))
+  allProductsAndSuppliers2$ = this.productsWithCategory$.pipe(
+    switchMap((products) =>
+      forkJoin(
+        products.map((product) =>
+          forkJoin(
+            product.supplierIds.map((supplierId) =>
+              this.http.get<Supplier>(`${this.suppliersUrl}/${supplierId}`)
             )
-        ))
+          ).pipe(
+            map(
+              (suppliers) =>
+                ({
+                  ...product,
+                  suppliers,
+                } as Product)
+            )
+          )
+        )
       )
-    );
+    )
+  );
 
   // Retrieve products and map to increase price using mergeMap
-  productsWithIncreasedPrice$ = this.productsWithCategory$
-    .pipe(
-      mergeAll(),
-      map(product => ({
-        ...product,
-        price: product.price * 1.5,
-        searchKey: [product.productName]
-      }) as Product),
-      toArray(),
-      tap(data => console.log('Increase Price', JSON.stringify(data))),
-      catchError(this.handleError)
-    );
+  productsWithIncreasedPrice$ = this.productsWithCategory$.pipe(
+    mergeAll(),
+    map(
+      (product) =>
+        ({
+          ...product,
+          price: product.price * 1.5,
+          percentageIncrease: `${1.5 * 100}%`,
+          priceIncrease: `${product.price * 1.5 - product.price}`,
+          searchKey: [product.productName],
+        } as Product)
+    ),
+    toArray(),
+    tap((data) => console.log("Increase Price", JSON.stringify(data))),
+    catchError(this.handleError)
+  );
 
   // Mapping from API fields to new shape using mergeMap and toArray
-  productsFromAPI1$ = this.http.get<ProductFromAPI[]>('api/productsFromAPI')
+  productsFromAPI1$ = this.http
+    .get<ProductFromAPI[]>("api/productsFromAPI")
     .pipe(
-      tap(data => console.log('Before mergeMap', JSON.stringify(data))),
-      mergeMap(products => products),
-      tap(data => console.log('After mergeMap', JSON.stringify(data))),
-      map(product => ({
-        id: product.p_id,
-        productName: product.p_nam,
-        productCode: product.p_cd,
-        description: product.p_des,
-        categoryId: product.p_c_fk_id,
-        price: product.p_p * 1.5
-      }) as Product),
-      tap(data => console.log('After map', JSON.stringify(data))),
+      tap((data) => console.log("Before mergeMap", JSON.stringify(data))),
+      mergeMap((products) => products),
+      tap((data) => console.log("After mergeMap", JSON.stringify(data))),
+      map(
+        (product) =>
+          ({
+            id: product.p_id,
+            productName: product.p_nam,
+            productCode: product.p_cd,
+            description: product.p_des,
+            categoryId: product.p_c_fk_id,
+            price: product.p_p * 1.5,
+          } as Product)
+      ),
+      tap((data) => console.log("After map", JSON.stringify(data))),
       toArray(),
-      tap(data => console.log('After toArray', JSON.stringify(data))),
+      tap((data) => console.log("After toArray", JSON.stringify(data))),
       catchError(this.handleError)
     );
 
   // Mapping from API fields to new shape using Array map
-  productsFromAPI2$ = this.http.get<ProductFromAPI[]>('api/productsFromAPI')
+  productsFromAPI2$ = this.http
+    .get<ProductFromAPI[]>("api/productsFromAPI")
     .pipe(
-      tap(data => console.log('Before map', JSON.stringify(data))),
-      map(products => products.map(product => ({
-        id: product.p_id,
-        productName: product.p_nam,
-        productCode: product.p_cd,
-        description: product.p_des,
-        categoryId: product.p_c_fk_id,
-        price: product.p_p * 1.5
-      }) as Product)),
-      tap(data => console.log('After map', JSON.stringify(data))),
+      tap((data) => console.log("Before map", JSON.stringify(data))),
+      map((products) =>
+        products.map(
+          (product) =>
+            ({
+              id: product.p_id,
+              productName: product.p_nam,
+              productCode: product.p_cd,
+              description: product.p_des,
+              categoryId: product.p_c_fk_id,
+              price: product.p_p * 1.5,
+            } as Product)
+        )
+      ),
+      tap((data) => console.log("After map", JSON.stringify(data))),
       catchError(this.handleError)
     );
 
   // Mapping to a class instance
-  productsClassInstance$ = this.http.get<ProductClass[]>(this.productsUrl)
-    .pipe(
-      tap(data => console.log('Before map', JSON.stringify(data))),
-      map(products => products.map(product => {
-        const productInstance: ProductClass = Object.assign(new ProductClass(), {
-          ...product,
-          price: product.price * 1.5,
-          searchKey: [product.category]
-        });
-        productInstance.inventoryValuation = productInstance.calculateValuation();
+  productsClassInstance$ = this.http.get<ProductClass[]>(this.productsUrl).pipe(
+    tap((data) => console.log("Before map", JSON.stringify(data))),
+    map((products) =>
+      products.map((product) => {
+        const productInstance: ProductClass = Object.assign(
+          new ProductClass(),
+          {
+            ...product,
+            price: product.price * 1.5,
+            searchKey: [product.category],
+          }
+        );
+        productInstance.inventoryValuation =
+          productInstance.calculateValuation();
         return productInstance;
-      })),
-      tap(data => console.log('After map', JSON.stringify(data))),
-      catchError(this.handleError)
-    );
+      })
+    ),
+    tap((data) => console.log("After map", JSON.stringify(data))),
+    catchError(this.handleError)
+  );
 
   // Demonstrates multiple levels of the object graph
-  productsClassInstanceMultipleLevels$ = this.http.get<ProductClass[]>(this.productsUrl)
+  productsClassInstanceMultipleLevels$ = this.http
+    .get<ProductClass[]>(this.productsUrl)
     .pipe(
-      map(products => products.map(product => Object.assign(new ProductClass(), {
-        ...product,
-        suppliers: (product.suppliers ? product.suppliers.map(supplier => Object.assign(new SupplierClass(), {
-          ...supplier
-        })) : [])
-      })))
+      map((products) =>
+        products.map((product) =>
+          Object.assign(new ProductClass(), {
+            ...product,
+            suppliers: product.suppliers
+              ? product.suppliers.map((supplier) =>
+                  Object.assign(new SupplierClass(), {
+                    ...supplier,
+                  })
+                )
+              : [],
+          })
+        )
+      )
     );
 
   // Returns the product with the highest price
-  productMax$ = this.productsWithCategory$
-    .pipe(
-      mergeMap(item => item),
-      max<Product>((a, b) => a.price < b.price ? -1 : 1),
-      catchError(this.handleError)
-    );
+  productMax$ = this.productsWithCategory$.pipe(
+    mergeMap((item) => item),
+    max<Product>((a, b) => (a.price < b.price ? -1 : 1)),
+    catchError(this.handleError)
+  );
 
   // Totals the prices for all items
-  productsTotal$ = this.productsWithCategory$
-    .pipe(
-      mergeMap(item => item),
-      reduce<Product, number>((acc, item) => acc + item.price, 0),
-      catchError(this.handleError)
-    );
+  productsTotal$ = this.productsWithCategory$.pipe(
+    mergeMap((item) => item),
+    reduce<Product, number>((acc, item) => acc + item.price, 0),
+    catchError(this.handleError)
+  );
 
   // Emits one product at a time with a delay
-  productsOneByOne$ = this.products$
-    .pipe(
-      mergeMap(products => products),  // Flatten the array
-      concatMap(product => of(product).pipe(delay(500))),
-      catchError(this.handleError)
-    );
+  productsOneByOne$ = this.products$.pipe(
+    mergeMap((products) => products), // Flatten the array
+    concatMap((product) => of(product).pipe(delay(500))),
+    shareReplay(100), // replace values fro subsequent subscribers
+    catchError(this.handleError)
+  );
 
   // Action Stream for adding/updating/deleting products
-  private productModifiedSubject = new Subject<Product>();
+  // Examples using different RxJs Subject 'types'
+  // private productModifiedSubject = new AsyncSubject<Product>(); // will never emit as subject.complete needs to be called.
+  private productModifiedSubject = new ReplaySubject<Product>(1);
+  // private productModifiedSubject = new BehaviorSubject<Product>(this.fakeProduct());
+  // private productModifiedSubject = new Subject<Product>();
+
   productModifiedAction$ = this.productModifiedSubject.asObservable();
 
   // Save the product via http
   // And then modify the full list of products with scan.
   productsWithCRUD$ = merge(
     this.productsWithCategory$,
-    this.productModifiedAction$
-      .pipe(
-        concatMap(product => this.saveProduct(product)),
-      ))
-    .pipe(
-      scan((products: Product[], product: Product) => this.modifyProducts(products, product)),
-      shareReplay(1)
-    );
+    this.productModifiedAction$.pipe(
+      concatMap((product) => this.saveProduct(product))
+    )
+  ).pipe(
+    scan((products: Product[], product: Product) =>
+      this.modifyProducts(products, product)
+    ),
+    // share(), // only share original products list
+    shareReplay(1)
+  );
 
   // Support methods
   // Save the product to the backend server
@@ -385,9 +446,10 @@ export class ProductService {
   saveProduct(product: Product): Observable<Product> {
     if (product.status === StatusCode.Added) {
       product.id = null;
-      return this.http.post<Product>(this.productsUrl, product, { headers: this.headers })
+      return this.http
+        .post<Product>(this.productsUrl, product, { headers: this.headers })
         .pipe(
-          tap(data => console.log('Created product', JSON.stringify(data))),
+          tap((data) => console.log("Created product", JSON.stringify(data))),
           catchError(this.handleError)
         );
     }
@@ -404,9 +466,12 @@ export class ProductService {
     }
     if (product.status === StatusCode.Updated) {
       const url = `${this.productsUrl}/${product.id}`;
-      return this.http.put<Product>(url, product, { headers: this.headers })
+      return this.http
+        .put<Product>(url, product, { headers: this.headers })
         .pipe(
-          tap(data => console.log('Updated Product: ' + JSON.stringify(product))),
+          tap((data) =>
+            console.log("Updated Product: " + JSON.stringify(product))
+          ),
           // return the original product
           map(() => product),
           catchError(this.handleError)
@@ -418,38 +483,40 @@ export class ProductService {
   modifyProducts(products: Product[], product: Product): Product[] {
     if (product.status === StatusCode.Added) {
       // Return a new array from the array of products + new product
-      return [
-        ...products,
-        { ...product, status: StatusCode.Unchanged }
-      ];
+      return [...products, { ...product, status: StatusCode.Unchanged }];
     }
     if (product.status === StatusCode.Deleted) {
       // Filter out the deleted product
-      return products.filter(p => p.id !== product.id);
+      return products.filter((p) => p.id !== product.id);
     }
     if (product.status === StatusCode.Updated) {
       // Return a new array with the updated product replaced
-      return products.map(p => p.id === product.id ?
-        { ...product, status: StatusCode.Unchanged } : p);
+      return products.map((p) =>
+        p.id === product.id ? { ...product, status: StatusCode.Unchanged } : p
+      );
     }
   }
   /* END */
 
-  constructor(private http: HttpClient,
-              private productCategoryService: ProductCategoryService,
-              private supplierService: SupplierService) {
+  constructor(
+    private http: HttpClient,
+    private productCategoryService: ProductCategoryService,
+    private supplierService: SupplierService
+  ) {
     // To try out each of the additional examples
     // (which are not currently bound in the UI)
     // this.allProductsAndSuppliers$.subscribe(console.log);
     // this.allProductsAndSuppliers2$.subscribe(console.log);
-    // this.productsWithIncreasedPrice$.subscribe(console.log);
+    this.productsWithIncreasedPrice$.subscribe(console.log);
     // this.productsFromAPI1$.subscribe(console.log);
     // this.productsFromAPI2$.subscribe(console.log);
     // this.productsClassInstance$.subscribe(console.log);
     // this.productsClassInstanceMultipleLevels$.subscribe(console.log);
     // this.productMax$.subscribe(console.log);
     // this.productsTotal$.subscribe(console.log);
-    // this.productsOneByOne$.subscribe(console.log);
+    // Example subscribe twice with shareReplay
+    this.productsOneByOne$.subscribe(console.log);
+    this.productsOneByOne$.subscribe(console.log);
   }
 
   addProduct(newProduct?: Product): void {
@@ -489,14 +556,14 @@ export class ProductService {
   private fakeProduct(): Product {
     return {
       id: 42,
-      productName: 'Another One',
-      productCode: 'TBX-0042',
-      description: 'Our new product',
+      productName: "Another One",
+      productCode: "TBX-0042",
+      description: "Our new product",
       price: 8.9,
       categoryId: 3,
-      category: 'Toolbox',
+      category: "Toolbox",
       quantityInStock: 30,
-      supplierIds: [5, 7, 8]
+      supplierIds: [5, 7, 8],
     };
   }
 
@@ -515,5 +582,4 @@ export class ProductService {
     console.error(err);
     return throwError(errorMessage);
   }
-
 }
