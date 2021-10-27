@@ -27,16 +27,25 @@ export class ProductService {
   );
 
   // To support a refresh feature
-  private refresh = new BehaviorSubject<boolean>(true);
+  private refresh = new Subject<number>();
+  private refreshCount: number = 0;
 
-  products2$ = this.refresh.pipe(
-    mergeMap(() =>
-      this.http.get<Product[]>(this.productsUrl).pipe(
-        tap((data) => console.log("Products", JSON.stringify(data))),
-        catchError(this.handleError)
+  products2$ = this.refresh
+    .pipe(
+      switchMap((refreshCount) =>
+        this.http.get<Product[]>(this.productsUrl).pipe(
+          tap(() =>
+            console.log("Refresh Count", refreshCount)
+          ),
+          retry(1), //retry once on http req error
+          tap((data) =>
+            console.log("Products REFRESHED", JSON.stringify(data))
+          ),
+          catchError(this.handleError)
+        )
       )
     )
-  );
+    .subscribe(console.log); // pipe will not be run until we subscribe to the 'Subject' here.
 
   // Combine products with categories
   // Map to the revised shape.
@@ -550,7 +559,7 @@ export class ProductService {
 
   // Refresh the data.
   refreshData(): void {
-    this.refresh.next(true);
+    this.refresh.next(++this.refreshCount);
   }
 
   private fakeProduct(): Product {

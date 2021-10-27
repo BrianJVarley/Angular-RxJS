@@ -31,10 +31,15 @@
           >
             Add Product
           </button>
-          <!-- <button type="button"
-                  class="btn btn-outline-secondary"
-                  (click)="onRefresh()">Refresh Data
-          </button> -->
+        </div>
+        <div class="col-2">
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            (click)="onRefresh()"
+          >
+            Refresh Data
+          </button>
         </div>
       </div>
     </div>
@@ -44,9 +49,7 @@
       *ngIf="productsFiltered$ | async as productsFiltered"
       class="table-responsive"
     >
-      <div class="card-sub-header">
-        Search Result
-      </div>
+      <div class="card-sub-header">Search Result</div>
       <table class="table table_search-result mb-0" *ngIf="productsFiltered">
         <thead>
           <tr>
